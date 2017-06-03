@@ -2,7 +2,7 @@
 Manifold forests
 """
 
-# authors: Fabian Richter <fabrichter@uos.de>, Maxim Schuwalow <mschuwalow@uos.de>
+# authors: Fabian Richter <fabrichter@uos.de>, Maxim Schuwalow <mschuwalow@uos.de>, Clemens Hutter <chutter@uos.de>
 # License: BSD
 
 import numpy as np
@@ -12,6 +12,7 @@ from ..utils import check_random_state
 from ..utils.extmath import cartesian
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
+print('blabla')
 
 def _entropy(data):
     """
@@ -176,20 +177,17 @@ class _Tree:
         """
         X = np.asarray(X)
         random_state = check_random_state(random_state)
-        num_nodes = 2**(self.depth+1) - 1
-        split_data = []
-        for i in range(num_nodes):
+        num_split_nodes = 2**(self.depth) - 1 # for leave nodes we do not have to calculate a split again
+        split_data = [X]
+        for parent in range(num_split_nodes): # loop threw the parents
             features = random_state.randint(low=0, high=X.shape[1], size=self.num_features)
 
-            if i == 0:
-                parent_data = X
-            else:
-                parent = math.floor((i-1) / 2)
-                parent_data = split_data[parent]
+            parent_data = split_data[parent]
 
             self.splits.append(_Split(features=features, num_options=self.num_options))
-            split = self.splits[i].fit(parent_data, random_state=random_state)
-            split_data.append(parent_data[split])
+            split = self.splits[parent].fit(parent_data, random_state=random_state)
+            split_data.append(parent_data[np.logical_not(split)]) # left part (split result negative)
+            split_data.append(parent_data[split]) # right part (split result positive)
 
     def predict(self, X):
         """
