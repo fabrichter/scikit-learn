@@ -102,11 +102,9 @@ class _Split:
 
             if np.count_nonzero(inner_values) >= self.num_options:
                 choices[index] = random_state.choice(feature_values[inner_values], self.num_options, replace=False)
-                print('whitout replacement')
             else:
                 # num_options was larger then the feature values in the middle (not min/max)
                 # draw with replacement so we don't have to change the gain collection matrix/choice matrix
-                print('with replacement')
                 choices[index] = random_state.choice(feature_values, self.num_options, replace=True)
                 # TODO we have to consider all featrue_values because we otherwise get a problem if we have only 1
                 # sample in the split left
