@@ -2,7 +2,7 @@
 Manifold forests
 """
 
-# authors: Fabian Richter <fabrichter@uos.de>, Maxim Schuwalow <mschuwalow@uos.de>
+# authors: Fabian Richter <fabrichter@uos.de>, Maxim Schuwalow <mschuwalow@uos.de>, Clemens Hutter <chutter@uos.de>
 # License: BSD
 
 import numpy as np
@@ -12,7 +12,6 @@ from ..utils import check_random_state
 from ..utils.extmath import cartesian
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
-
 def _entropy(data):
     """
     continous entropy of multivariate gaussian, simplified for use in information gain
@@ -23,7 +22,7 @@ def _entropy(data):
     det = np.linalg.det(cov)
     if det == 0:
         return 0
-    entropy = np.log(det)
+    entropy = np.log(abs(det)) #due to numerical reasons might be slightly negative -> abs as workaround
     return entropy
 
 def _affinity_matrix(X):
@@ -96,7 +95,20 @@ class _Split:
                 gain[index] = 0
                 continue
 
-            choices[index] = random_state.choice(X[:,feature], self.num_options)
+            # if we split allong the minimal or the maximal feature we have an empty and completely useless split
+            feature_values = X[:, feature]
+            inner_values = (feature_values.min() < feature_values) & (feature_values <= feature_values.max())
+
+
+            if np.count_nonzero(inner_values) >= self.num_options:
+                choices[index] = random_state.choice(feature_values[inner_values], self.num_options, replace=False)
+            else:
+                # num_options was larger then the feature values in the middle (not min/max)
+                # draw with replacement so we don't have to change the gain collection matrix/choice matrix
+                choices[index] = random_state.choice(feature_values, self.num_options, replace=True)
+                # TODO we have to consider all featrue_values because we otherwise get a problem if we have only 1
+                # sample in the split left
+
             # determine splits
             splits = [X[:,feature] < option for option in choices[index]]
             # get corresponding datasets
@@ -176,20 +188,18 @@ class _Tree:
         """
         X = np.asarray(X)
         random_state = check_random_state(random_state)
-        num_nodes = 2**(self.depth+1) - 1
-        split_data = []
-        for i in range(num_nodes):
-            features = random_state.randint(low=0, high=X.shape[1], size=self.num_features)
+        num_split_nodes = 2**(self.depth) - 1 # for leave nodes we do not have to calculate a split again
+        split_data = [X]
+        # TODO this still continues splitting even if in a subtree there is no data left
+        for parent in range(num_split_nodes): # loop threw the parents
+            features = random_state.choice(X.shape[1], size=self.num_features, replace=False)
 
-            if i == 0:
-                parent_data = X
-            else:
-                parent = math.floor((i-1) / 2)
-                parent_data = split_data[parent]
+            parent_data = split_data[parent]
 
-            self.splits.append(_Split(features=features, num_options=self.num_options))
-            split = self.splits[i].fit(parent_data, random_state=random_state)
-            split_data.append(parent_data[split])
+            self.splits.append(_Split(features=features, num_options=self.num_options)) # split node for parent
+            split = self.splits[parent].fit(parent_data, random_state=random_state) # result of split
+            split_data.append(parent_data[np.logical_not(split)]) # left child (split result negative)
+            split_data.append(parent_data[split]) # right child (split result positive)
 
     def predict(self, X):
         """
