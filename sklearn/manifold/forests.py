@@ -12,8 +12,6 @@ from ..utils import check_random_state
 from ..utils.extmath import cartesian
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
-print('blabla')
-
 def _entropy(data):
     """
     continous entropy of multivariate gaussian, simplified for use in information gain
@@ -24,7 +22,7 @@ def _entropy(data):
     det = np.linalg.det(cov)
     if det == 0:
         return 0
-    entropy = np.log(det)
+    entropy = np.log(abs(det)) #due to numerical reasons might be slightly negative -> abs as workaround
     return entropy
 
 def _affinity_matrix(X):
@@ -97,7 +95,22 @@ class _Split:
                 gain[index] = 0
                 continue
 
-            choices[index] = random_state.choice(X[:,feature], self.num_options)
+            # if we split allong the minimal or the maximal feature we have an empty and completely useless split
+            feature_values = X[:, feature]
+            inner_values = (feature_values.min() < feature_values) & (feature_values <= feature_values.max())
+
+
+            if np.count_nonzero(inner_values) >= self.num_options:
+                choices[index] = random_state.choice(feature_values[inner_values], self.num_options, replace=False)
+                print('whitout replacement')
+            else:
+                # num_options was larger then the feature values in the middle (not min/max)
+                # draw with replacement so we don't have to change the gain collection matrix/choice matrix
+                print('with replacement')
+                choices[index] = random_state.choice(feature_values, self.num_options, replace=True)
+                # TODO we have to consider all featrue_values because we otherwise get a problem if we have only 1
+                # sample in the split left
+
             # determine splits
             splits = [X[:,feature] < option for option in choices[index]]
             # get corresponding datasets
@@ -179,15 +192,16 @@ class _Tree:
         random_state = check_random_state(random_state)
         num_split_nodes = 2**(self.depth) - 1 # for leave nodes we do not have to calculate a split again
         split_data = [X]
+        # TODO this still continues splitting even if in a subtree there is no data left
         for parent in range(num_split_nodes): # loop threw the parents
-            features = random_state.randint(low=0, high=X.shape[1], size=self.num_features)
+            features = random_state.choice(X.shape[1], size=self.num_features, replace=False)
 
             parent_data = split_data[parent]
 
-            self.splits.append(_Split(features=features, num_options=self.num_options))
-            split = self.splits[parent].fit(parent_data, random_state=random_state)
-            split_data.append(parent_data[np.logical_not(split)]) # left part (split result negative)
-            split_data.append(parent_data[split]) # right part (split result positive)
+            self.splits.append(_Split(features=features, num_options=self.num_options)) # split node for parent
+            split = self.splits[parent].fit(parent_data, random_state=random_state) # result of split
+            split_data.append(parent_data[np.logical_not(split)]) # left child (split result negative)
+            split_data.append(parent_data[split]) # right child (split result positive)
 
     def predict(self, X):
         """
