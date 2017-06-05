@@ -70,7 +70,7 @@ __all__ = ["RandomForestClassifier",
            "ExtraTreesClassifier",
            "ExtraTreesRegressor",
            "RandomTreesEmbedding",
-           "RandomTreesClustering"]
+           "RandomForestClustering"]
 
 MAX_INT = np.iinfo(np.int32).max
 
@@ -1803,7 +1803,7 @@ class RandomTreesEmbedding(BaseForest):
                  verbose=0,
                  warm_start=False):
         super(RandomTreesEmbedding, self).__init__(
-            base_estimator=ExtraTreeRegressor(),
+            base_estimator=DecisionTreeRegressor(),
             n_estimators=n_estimators,
             estimator_params=("criterion", "max_depth", "min_samples_split",
                               "min_samples_leaf", "min_weight_fraction_leaf",
@@ -1895,129 +1895,7 @@ class RandomTreesEmbedding(BaseForest):
         """
         return self.one_hot_encoder_.transform(self.apply(X))
 
-class RandomTreesClustering(BaseForest):
-    """An ensemble of random trees.
-
-    An unsupervised transformation of a dataset to a high-dimensional
-    sparse representation. A datapoint is coded according to which leaf of
-    each tree it is sorted into. Using a one-hot encoding of the leaves,
-    this leads to a binary coding with as many ones as there are trees in
-    the forest.
-
-    The dimensionality of the resulting representation is
-    ``n_out <= n_estimators * max_leaf_nodes``. If ``max_leaf_nodes == None``,
-    the number of leaf nodes is at most ``n_estimators * 2 ** max_depth``.
-
-    Read more in the :ref:`User Guide <random_trees_embedding>`.
-
-    Parameters
-    ----------
-    n_estimators : integer, optional (default=10)
-        Number of trees in the forest.
-
-    max_depth : integer, optional (default=5)
-        The maximum depth of each tree. If None, then nodes are expanded until
-        all leaves are pure or until all leaves contain less than
-        min_samples_split samples.
-
-    min_samples_split : int, float, optional (default=2)
-        The minimum number of samples required to split an internal node:
-
-        - If int, then consider `min_samples_split` as the minimum number.
-        - If float, then `min_samples_split` is a percentage and
-          `ceil(min_samples_split * n_samples)` is the minimum
-          number of samples for each split.
-
-        .. versionchanged:: 0.18
-           Added float values for percentages.
-
-    min_samples_leaf : int, float, optional (default=1)
-        The minimum number of samples required to be at a leaf node:
-
-        - If int, then consider `min_samples_leaf` as the minimum number.
-        - If float, then `min_samples_leaf` is a percentage and
-          `ceil(min_samples_leaf * n_samples)` is the minimum
-          number of samples for each node.
-
-        .. versionchanged:: 0.18
-           Added float values for percentages.
-
-    min_weight_fraction_leaf : float, optional (default=0.)
-        The minimum weighted fraction of the sum total of weights (of all
-        the input samples) required to be at a leaf node. Samples have
-        equal weight when sample_weight is not provided.
-
-    max_leaf_nodes : int or None, optional (default=None)
-        Grow trees with ``max_leaf_nodes`` in best-first fashion.
-        Best nodes are defined as relative reduction in impurity.
-        If None then unlimited number of leaf nodes.
-
-    min_impurity_split : float,
-        Threshold for early stopping in tree growth. A node will split
-        if its impurity is above the threshold, otherwise it is a leaf.
-
-        .. deprecated:: 0.19
-           ``min_impurity_split`` has been deprecated in favor of
-           ``min_impurity_decrease`` in 0.19 and will be removed in 0.21.
-           Use ``min_impurity_decrease`` instead.
-
-    min_impurity_decrease : float, optional (default=0.)
-        A node will be split if this split induces a decrease of the impurity
-        greater than or equal to this value.
-
-        The weighted impurity decrease equation is the following::
-
-            N_t / N * (impurity - N_t_R / N_t * right_impurity
-                                - N_t_L / N_t * left_impurity)
-
-        where ``N`` is the total number of samples, ``N_t`` is the number of
-        samples at the current node, ``N_t_L`` is the number of samples in the
-        left child, and ``N_t_R`` is the number of samples in the right child.
-
-        ``N``, ``N_t``, ``N_t_R`` and ``N_t_L`` all refer to the weighted sum,
-        if ``sample_weight`` is passed.
-
-        .. versionadded:: 0.19
-
-    bootstrap : boolean, optional (default=True)
-        Whether bootstrap samples are used when building trees.
-
-    sparse_output : bool, optional (default=True)
-        Whether or not to return a sparse CSR matrix, as default behavior,
-        or to return a dense array compatible with dense pipeline operators.
-
-    n_jobs : integer, optional (default=1)
-        The number of jobs to run in parallel for both `fit` and `predict`.
-        If -1, then the number of jobs is set to the number of cores.
-
-    random_state : int, RandomState instance or None, optional (default=None)
-        If int, random_state is the seed used by the random number generator;
-        If RandomState instance, random_state is the random number generator;
-        If None, the random number generator is the RandomState instance used
-        by `np.random`.
-
-    verbose : int, optional (default=0)
-        Controls the verbosity of the tree building process.
-
-    warm_start : bool, optional (default=False)
-        When set to ``True``, reuse the solution of the previous call to fit
-        and add more estimators to the ensemble, otherwise, just fit a whole
-        new forest.
-
-    Attributes
-    ----------
-    estimators_ : list of DecisionTreeClassifier
-        The collection of fitted sub-estimators.
-
-    References
-    ----------
-    .. [1] P. Geurts, D. Ernst., and L. Wehenkel, "Extremely randomized trees",
-           Machine Learning, 63(1), 3-42, 2006.
-    .. [2] Moosmann, F. and Triggs, B. and Jurie, F.  "Fast discriminative
-           visual codebooks using randomized clustering forests"
-           NIPS 2007
-
-    """
+class RandomForestClustering(BaseForest):
 
     def __init__(self,
                  n_estimators=10,
@@ -2033,8 +1911,8 @@ class RandomTreesClustering(BaseForest):
                  random_state=None,
                  verbose=0,
                  warm_start=False):
-        super(RandomTreesClustering, self).__init__(
-            base_estimator=RandomForestRegressor(),
+        super(RandomForestClustering, self).__init__(
+            base_estimator=DecisionTreeRegressor(),
             n_estimators=n_estimators,
             estimator_params=("criterion", "max_depth", "min_samples_split",
                               "min_samples_leaf", "min_weight_fraction_leaf",
@@ -2103,8 +1981,8 @@ class RandomTreesClustering(BaseForest):
 
         rnd = check_random_state(self.random_state)
         y = rnd.uniform(size=X.shape[0])
-        super(RandomTreesClustering, self).fit(X, y,
-                                              sample_weight=sample_weight)
+        super(RandomForestClustering, self).fit(X, y,
+                                                sample_weight=sample_weight)
 
         return self.apply(X)
 
