@@ -11,6 +11,8 @@ from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
 
+np.seterr(all='raise')
+
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
     """
@@ -50,7 +52,7 @@ class _Split:
     feature: value used for splitting
     """
 
-    def __init__(self, features, num_options=10):
+    def __init__(self, num_features, remaining_depth, num_options=10):
         """
         A node of a tree, marking a split
         
@@ -62,10 +64,56 @@ class _Split:
         num_options : int
             number of options for each feature to evaluate
         """
-        self.features = features
+        self.num_features = num_features
         self.num_options = num_options
+        self.left = None
+        self.right = None
+        self.remaining_depth = remaining_depth
 
-    def fit(self, X, random_state=0):
+    def fit_recursive(self, X, random_state=0):
+        self.feature, self.value = self.determine_split(X, random_state=random_state)
+
+        if self.remaining_depth <= 1:
+            return
+
+        split = self.predict(X)
+
+        left_split = X[np.logical_not(split)]
+        right_split = X[split]
+
+        if len(left_split) > 1:
+            self.left = _Split(self.num_features, self.remaining_depth - 1, self.num_options)
+            self.left.fit_recursive(left_split, random_state)
+        if len(right_split) > 1:
+            self.right = _Split(self.num_features, self.remaining_depth - 1, self.num_options)
+            self.right.fit_recursive(right_split, random_state)
+
+    def predict_recursive(self, datum, node_id):
+        """
+        predict one datapoint
+        :param datum:
+        :return:
+        """
+        if datum[self.feature] < self.value:
+            # left
+            id = 2 * node_id + 1
+            node = self.left
+
+        else:
+            # right
+            id = 2 * node_id + 2
+            node = self.right
+
+        if node:
+            return self.left.predict_recursive(datum, id)
+        else:
+            # the child node is not a split node but a leave. return index of that node
+            return id
+
+
+
+
+    def determine_split(self, X, random_state=0):
         """
         Search and return for the weak learner that gives us the most information.
         
@@ -80,16 +128,16 @@ class _Split:
         
         Returns
         -------
-        
-        split : array, shape (n_samples, )
-            Boolean array that specifies the side of the split for each sample
+
+        feature_index, split_value
         """
         X = np.asarray(X)
         random_state = check_random_state(random_state)
-        choices = np.empty((len(self.features), self.num_options))
-        gain = np.empty((len(self.features), self.num_options))
+        choices = np.empty((self.num_features, self.num_options))
+        gain = np.empty((self.num_features, self.num_options))
+        feature_choices = random_state.choice(X.shape[1], self.num_features, replace=False)
         # evaluate different splits: loop over features, save gain for each option
-        for index, feature in enumerate(self.features):
+        for index, feature in enumerate(feature_choices):
             # simple axis-aligned split, TODO: use linear function?
             if X[:,feature].shape[0] == 0:
                 gain[index] = 0
@@ -105,7 +153,7 @@ class _Split:
             else:
                 # num_options was larger then the feature values in the middle (not min/max)
                 # draw with replacement so we don't have to change the gain collection matrix/choice matrix
-                choices[index] = random_state.choice(feature_values, self.num_options, replace=True)
+                choices[index] = random_state.choice(feature_values[inner_values], self.num_options, replace=True)
                 # TODO we have to consider all featrue_values because we otherwise get a problem if we have only 1
                 # sample in the split left
 
@@ -128,11 +176,8 @@ class _Split:
         best = np.argmax(gain)
         feature_idx, value_idx = np.unravel_index(best, gain.shape)
         value = choices[feature_idx, value_idx]
-        feature = self.features[feature_idx]
-        split = X[:, feature] < value 
-        self.feature = feature
-        self.value = value
-        return split
+        feature = feature_choices[feature_idx]
+        return feature, value
 
     def predict(self, X):
         """
@@ -150,7 +195,7 @@ class _Split:
             boolean symbolizing left or right side of split of weak learner
         """
         X = np.asarray(X)
-        return X[:,self.feature] < self.value
+        return X[:, self.feature] < self.value
 
 
 # NOTE: bagging not implemented, as in reference
@@ -171,7 +216,6 @@ class _Tree:
         self.depth = depth
         self.num_features = num_features
         self.num_options = num_options
-        self.splits = [] # binary tree of splits
 
     def fit(self, X, random_state=0):
         """
@@ -186,20 +230,16 @@ class _Tree:
             A random number generator instance to define the state of the
             random permutations generator.
         """
+
+
+
         X = np.asarray(X)
-        random_state = check_random_state(random_state)
-        num_split_nodes = 2**(self.depth) - 1 # for leave nodes we do not have to calculate a split again
-        split_data = [X]
-        # TODO this still continues splitting even if in a subtree there is no data left
-        for parent in range(num_split_nodes): # loop threw the parents
-            features = random_state.choice(X.shape[1], size=self.num_features, replace=False)
 
-            parent_data = split_data[parent]
+        self.root = _Split(self.num_features, self.depth, self.num_options)
 
-            self.splits.append(_Split(features=features, num_options=self.num_options)) # split node for parent
-            split = self.splits[parent].fit(parent_data, random_state=random_state) # result of split
-            split_data.append(parent_data[np.logical_not(split)]) # left child (split result negative)
-            split_data.append(parent_data[split]) # right child (split result positive)
+        self.root.fit_recursive(X, random_state=random_state)
+
+
 
     def predict(self, X):
         """
@@ -218,16 +258,8 @@ class _Tree:
         """
         X = np.asarray(X)
         indices = np.zeros((X.shape[0],), np.int) # start at root node; save which node is used for prediction at each step
-        for i in range(self.depth):
-            # predict split using correct node
-            split_direction = []
-            for index, node in enumerate(np.nditer(indices)):
-                datum = X[index]
-                split_node = self.splits[node]
-                split_direction.append(split_node.predict([datum])[0])
-
-            # go to next node (child): left for predict = False, right = predict = True
-            indices = (indices * 2) + 1 + split_direction
+        for i, datum in enumerate(X):
+            indices[i] = self.root.predict_recursive(datum, 0)
 
         return indices
 
@@ -262,7 +294,7 @@ class ManifoldForest(BaseEstimator):
         self.num_features = num_features
     
 
-    def fit_transform(self, X, y=None, random_state=0):
+    def fit_transform(self, X, dim, y=None, random_state=0):
         """
         Fit the data from X, and return the calculated distances
 
@@ -293,7 +325,7 @@ class ManifoldForest(BaseEstimator):
             affinities[index] = _affinity_matrix(clusters)
 
         self.W = np.sum(affinities, axis=0) / self.num_trees
-        return self.W
+        return self.laplacian_eigenmap(self.W, dim)
 
     def fit(self, X, y=None):
         """
@@ -306,4 +338,30 @@ class ManifoldForest(BaseEstimator):
         """
         self.fit_transform(X)
         return self
+
+
+    def laplacian_eigenmap(self, W, dim):
+        """
+
+        :param W: affinity matrix
+        :param dim: target dimensionality of embeding
+        :return: array, shape (n_samples, dim) with the embeded coordinates
+        """
+        diag_values = np.sum(W, axis=0)**(-0.5)
+        degree_matrix = np.zeros(W.shape)
+        degree_matrix[list(range(len(W))), list(range(len(W)))] = diag_values
+        I = np.identity(len(W))
+
+        L = I - degree_matrix @ W @ degree_matrix
+        values, vectors = np.linalg.eig(L)
+        sorted_indices = np.argsort(values)
+
+        print(degree_matrix)
+        print(W)
+        print(L)
+
+        E = vectors[:, sorted_indices[1:dim+1]]
+
+        return E
+
         
