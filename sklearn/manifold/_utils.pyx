@@ -6,6 +6,7 @@ from libc.stdio cimport printf
 cdef extern from "numpy/npy_math.h":
     float NPY_INFINITY
 
+from ..metrics.pairwise import pairwise_distances
 
 cdef float EPSILON_DBL = 1e-8
 cdef float PERPLEXITY_TOLERANCE = 1e-5
@@ -136,3 +137,56 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
         print("[t-SNE] Mean sigma: %f"
               % np.mean(math.sqrt(n_samples / beta_sum)))
     return P
+
+@cython.boundscheck(False)
+cpdef np.ndarray[np.int8_t, ndim=2] _affinity_matrix(np.ndarray X):
+    """
+    Computes affinity matrix out of tree partition
+    using binary affinity
+    """
+    cdef unsigned int n = X.shape[0]
+    cdef np.ndarray[np.int8_t, ndim=2] distances = np.empty((n, n), dtype=np.int8)
+    cdef unsigned int i
+
+    for i in range(n):
+        distances[i, :] = X[i] - X == 0
+
+    return distances
+
+@cython.boundscheck(False)
+cpdef np.ndarray _affinity_matrix_loopy(np.ndarray X):
+    """
+    Computes affinity matrix out of tree partition
+    using binary affinity
+    """
+    cdef unsigned int n = X.shape[0]
+    cdef np.ndarray[np.int8_t, ndim=2] distances = np.empty((n, n), dtype=np.int8)
+    cdef unsigned int i, j
+
+    for i in range(n):
+        for j in range(n):
+            distances[i, j] = 1 if X[i] == X[j] else 0
+
+    return distances
+
+
+cpdef np.ndarray _affinity_matrix_python(np.ndarray X):
+    cdef np.ndarray distances = pairwise_distances(X.reshape(-1, 1), metric='manhattan', n_jobs=-1)
+    return distances == 0
+
+def _affinity_matrix_bad(X):
+    """
+    Computes affinity matrix out of tree partition
+    using binary affinity
+    """
+    from ..utils.extmath import cartesian
+    combinations = cartesian((X, X))
+    def binary_affinity(pair):
+        a, b = pair
+        dist = 1 if a == b else 0
+        return dist
+
+    distance = np.apply_along_axis(binary_affinity, 1, combinations)
+    k = X.shape[0]
+    matrix = distance.reshape((k, k))
+    return matrix
