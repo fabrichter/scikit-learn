@@ -332,7 +332,12 @@ cdef class BestSplitter(BaseDenseSplitter):
         cdef SIZE_t X_sample_stride = self.X_sample_stride
         cdef SIZE_t X_feature_stride = self.X_feature_stride
         cdef SIZE_t max_features = self.max_features
+        cdef SIZE_t min_samples_leaf = self.min_samples_leaf
+        cdef double min_weight_leaf = self.min_weight_leaf
         cdef UINT32_t* random_state = &self.rand_r_state
+
+        cdef INT32_t* X_idx_sorted = self.X_idx_sorted_ptr
+        cdef SIZE_t* sample_mask = self.sample_mask
 
         cdef SplitRecord best, current
         cdef double current_proxy_improvement = -INFINITY
