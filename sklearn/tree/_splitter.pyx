@@ -1654,12 +1654,25 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
     (continuous) entropy of a d-dimensional Gaussian.
        """
     def __reduce__(self):
+        # TODO fix: BestSplitter?
         return (BestSplitter, (self.criterion,
                                self.max_features,
                                self.min_samples_leaf,
                                self.min_weight_leaf,
                                self.random_state,
                                self.presort), self.__getstate__())
+
+    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end, long long size) with gil:
+
+        #NOTE: it doesn't take ownership of `data`. You must free `data` yourself
+        cdef np.npy_intp dims = size
+        cdef np.ndarray data = np.PyArray_SimpleNewFromData(1, &dims, np.NPY_DOUBLE, <void*>X)[start:end]
+        cdef np.ndarray means = np.mean(data, axis=0)
+        cdef np.ndarray normalized = data - means
+        cdef np.ndarray cov = np.dot(normalized.T, normalized)
+        cdef double det = np.linalg.slogdet(cov)[1]
+        return det
+
 
     cdef int node_split(self, double impurity, SplitRecord* split,
                         SIZE_t* n_constant_features) nogil except -1:
@@ -1692,8 +1705,6 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         cdef SplitRecord best, current
         cdef double current_improvement = -INFINITY
         cdef double best_improvement = -INFINITY
-        cdef DTYPE_t means, normalized, data
-        cdef double entropy, det, cov
 
         cdef SIZE_t f_i = n_features
         cdef SIZE_t f_j
@@ -1835,27 +1846,19 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                             # TODO: calculate continous gaussian entropy without gil.
                             # this means no numpy, slicing, etc.
 
-                            # calculate continous entropy of gaussian
-                            # current.improvement = 0
-                            # data = np.copy(Xf[start:current.pos])
-                            # means = [sum(x) for x in data]
-                            # data = data - means
-                            # cov = np.dot(data.T, data)
-                            # det = np.linalg.det(cov)
-                            # if det == 0:
-                            #     return 0
-                            # entropy = np.log(np.abs(det))
-                            # current_improvement += entropy 
-
-                            # data = np.copy(Xf[current.pos:end])
-                            # means = np.mean(data, axis=0)
-                            # data = data - means
-                            # cov = np.dot(data.T, data)
-                            # det = np.linalg.det(cov)
-                            # if det == 0:
-                            #     return 0
-                            # entropy = np.log(np.abs(det))
-                            # current_improvement += entropy 
+                            with gil:
+                                # calculate continous entropy of gaussian
+                                current_improvement += self._entropy(Xf, start, current.pos, end - start) 
+                                current_improvement += self._entropy(Xf, current.pos, end,  end - start) 
+                                # data = np.copy(Xf[current.pos:end])
+                                # means = np.mean(data, axis=0)
+                                # data = data - means
+                                # cov = np.dot(data.T, data)
+                                # det = np.linalg.det(cov)
+                                # if det == 0:
+                                #     return 0
+                                # entropy = np.log(np.abs(det))
+                                # current_improvement += entropy 
 
                             # if current.improvement > best.improvement:
                             #     best = current  # copy
