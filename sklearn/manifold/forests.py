@@ -10,7 +10,7 @@ import math
 from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
-from .utils import _affinity_matrix
+from ._utils import _affinity_matrix
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
