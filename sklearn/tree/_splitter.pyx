@@ -1647,7 +1647,6 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
         n_constant_features[0] = n_total_constants
         return 0
 
-<<<<<<< HEAD
 
 cdef class GaussianEntropySplitter(BaseDenseSplitter):
     """
@@ -1668,55 +1667,6 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
 
         Returns -1 in case of failure to allocate memory (and raise MemoryError)
         or 0 otherwise.
-=======
-cdef class ClusteringSplitter(BaseDenseSplitter):
-    """Splitter class for unsupervised splitting (e.g. clustering, density estimation).
-    
-    Does not use a criterion, as these don't allow us to calculate entropy based on X.
-    """
-
-    cdef int init(self,
-                   object X,
-                   np.ndarray[DOUBLE_t, ndim=2, mode="c"] y=None,
-                   DOUBLE_t* sample_weight=NULL,
-                   np.ndarray X_idx_sorted=None) except -1:
-        """Initialize the splitter.
-        """
-
-        cdef SIZE_t n_samples = X.shape[0]
-
-        y = np.empty((n_samples, 1)) # waste of memory or needed to not make Splitter.init crash?
-
-        BaseDenseSplitter.init(self, X, y, sample_weight)
-
-    cdef int node_reset(self, SIZE_t start, SIZE_t end,
-                        double* weighted_n_node_samples=None) nogil except -1:
-        """Reset splitter on node samples[start:end].
-
-        Returns -1 in case of failure to allocate memory (and raise MemoryError)
-        or 0 otherwise.
-
-        Parameters
-        ----------
-        start : SIZE_t
-            The index of the first sample to consider
-        end : SIZE_t
-            The index of the last sample to consider
-        weighted_n_node_samples : numpy.ndarray, dtype=double pointer
-            The total weight of those samples
-        """
-
-        self.start = start
-        self.end = end
-
-        return 0
-
-    cdef int node_split(self, double impurity, SplitRecord* split,
-                        SIZE_t* n_constant_features) nogil except -1:
-        """Find the best split on node samples[start:end] based on continous gaussian entropy (unsupervised).
-
-        It should return -1 upon errors.
->>>>>>> 44ed531d09692cbdf3ded1256e3933d40378d510
         """
         # Find the best split
         cdef SIZE_t* samples = self.samples
@@ -1740,15 +1690,10 @@ cdef class ClusteringSplitter(BaseDenseSplitter):
         cdef SIZE_t* sample_mask = self.sample_mask
 
         cdef SplitRecord best, current
-<<<<<<< HEAD
         cdef double current_improvement = -INFINITY
         cdef double best_improvement = -INFINITY
         cdef DTYPE_t means, normalized, data
         cdef double entropy, det, cov
-=======
-        cdef double current_proxy_improvement = -INFINITY
-        cdef double best_proxy_improvement = -INFINITY
->>>>>>> 44ed531d09692cbdf3ded1256e3933d40378d510
 
         cdef SIZE_t f_i = n_features
         cdef SIZE_t f_j
@@ -1854,13 +1799,8 @@ cdef class ClusteringSplitter(BaseDenseSplitter):
                     f_i -= 1
                     features[f_i], features[f_j] = features[f_j], features[f_i]
 
-<<<<<<< HEAD
                     # # Evaluate all splits
                     # self.criterion.reset()
-=======
-                    # Evaluate all splits
-                    self.criterion.reset()
->>>>>>> 44ed531d09692cbdf3ded1256e3933d40378d510
                     p = start
 
                     while p < end:
@@ -1882,7 +1822,6 @@ cdef class ClusteringSplitter(BaseDenseSplitter):
                                     ((end - current.pos) < min_samples_leaf)):
                                 continue
 
-<<<<<<< HEAD
                             # self.criterion.update(current.pos)
 
                             # # Reject if min_weight_leaf is not satisfied
@@ -1942,52 +1881,6 @@ cdef class ClusteringSplitter(BaseDenseSplitter):
         #     best.improvement = self.criterion.impurity_improvement(impurity)
         #     self.criterion.children_impurity(&best.impurity_left,
         #                                      &best.impurity_right)
-=======
-                            # TODO: change me! calculate entropy of split
-                            self.criterion.update(current.pos)
-
-                            # Reject if min_weight_leaf is not satisfied
-                            # TODO: see how to handle weights in entropy calculation
-                            if ((self.criterion.weighted_n_left < min_weight_leaf) or
-                                    (self.criterion.weighted_n_right < min_weight_leaf)):
-                                continue
-
-                            # TODO: substitute proxy improvement with normal entropy 
-                            current_proxy_improvement = self.criterion.proxy_impurity_improvement()
-
-                            if current_proxy_improvement > best_proxy_improvement:
-                                best_proxy_improvement = current_proxy_improvement
-                                current.threshold = (Xf[p - 1] + Xf[p]) / 2.0
-
-                                if current.threshold == Xf[p]:
-                                    current.threshold = Xf[p - 1]
-
-                                best = current  # copy
-
-        # Reorganize into samples[start:best.pos] + samples[best.pos:end]
-        if best.pos < end:
-            feature_offset = X_feature_stride * best.feature
-            partition_end = end
-            p = start
-
-            while p < partition_end:
-                if X[X_sample_stride * samples[p] + feature_offset] <= best.threshold:
-                    p += 1
-
-                else:
-                    partition_end -= 1
-
-                    tmp = samples[partition_end]
-                    samples[partition_end] = samples[p]
-                    samples[p] = tmp
-
-            # TODO: calculate normal entropy
-            self.criterion.reset()
-            self.criterion.update(best.pos)
-            best.improvement = self.criterion.impurity_improvement(impurity)
-            self.criterion.children_impurity(&best.impurity_left,
-                                             &best.impurity_right)
->>>>>>> 44ed531d09692cbdf3ded1256e3933d40378d510
 
         # Reset sample mask
         if self.presort == 1:
@@ -2007,20 +1900,4 @@ cdef class ClusteringSplitter(BaseDenseSplitter):
         # Return values
         split[0] = best
         n_constant_features[0] = n_total_constants
-<<<<<<< HEAD
         return 0
-=======
-        return 0
-
-        pass
-
-    cdef void node_value(self, double* dest) nogil:
-        """Copy the value of node samples[start:end] into dest."""
-        # TODO: do shit
-        self.criterion.node_value(dest)
-
-    cdef double node_impurity(self) nogil:
-        """Return the impurity of the current node."""
-        # TODO: do shit
-        return self.criterion.node_impurity()
->>>>>>> 44ed531d09692cbdf3ded1256e3933d40378d510
