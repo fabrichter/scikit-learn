@@ -6,6 +6,7 @@ from libc.stdio cimport printf
 cdef extern from "numpy/npy_math.h":
     float NPY_INFINITY
 
+from ..metrics.pairwise import pairwise_distances
 
 cdef float EPSILON_DBL = 1e-8
 cdef float PERPLEXITY_TOLERANCE = 1e-5
@@ -136,3 +137,18 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
         print("[t-SNE] Mean sigma: %f"
               % np.mean(math.sqrt(n_samples / beta_sum)))
     return P
+
+@cython.boundscheck(False)
+cpdef np.ndarray[np.int8_t, ndim=2] _affinity_matrix(np.ndarray X):
+    """
+    Computes affinity matrix out of tree partition
+    using binary affinity
+    """
+    cdef unsigned int n = X.shape[0]
+    cdef np.ndarray[np.int8_t, ndim=2] distances = np.empty((n, n), dtype=np.int8)
+    cdef unsigned int i
+
+    for i in range(n):
+        distances[i, :] = X[i] - X == 0
+
+    return distances

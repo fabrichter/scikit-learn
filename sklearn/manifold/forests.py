@@ -10,6 +10,7 @@ import math
 from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
+from ._utils import _affinity_matrix
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
@@ -24,24 +25,6 @@ def _entropy(data):
         return 0
     entropy = np.log(abs(det)) #due to numerical reasons might be slightly negative -> abs as workaround
     return entropy
-
-def _affinity_matrix(X):
-    """
-    Computes affinity matrix out of tree partition
-    using binary affinity
-    """
-    combinations = cartesian((X, X))
-    def binary_affinity(pair):
-        a, b = pair
-        dist = 1 if a == b else 0
-        return dist
-
-    distance = np.apply_along_axis(binary_affinity, 1, combinations)
-    k = X.shape[0]
-    matrix = distance.reshape((k, k))
-    return matrix
-    
-
 class _Split:
     """
     Members
