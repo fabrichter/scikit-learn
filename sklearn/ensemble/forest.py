@@ -1980,8 +1980,7 @@ class RandomForestClustering(BaseForest):
             X.sort_indices()
 
         rnd = check_random_state(self.random_state)
-        y = rnd.uniform(size=X.shape[0])
-        super(RandomForestClustering, self).fit(X, y,
+        super(RandomForestClustering, self).fit(X, X,
                                                 sample_weight=sample_weight)
 
         return self.apply(X)

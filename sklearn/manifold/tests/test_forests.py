@@ -20,7 +20,7 @@ def test_tree():
     # tree.fit(data,)
     # clusters = tree.predict(data)
 
-    forest = RandomForestClustering(n_estimators=1, max_depth=2)
+    forest = RandomForestClustering(n_estimators=5, max_depth=2)
     clusters = forest.fit_transform(data)
 
     print(clusters)
