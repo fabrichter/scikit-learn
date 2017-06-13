@@ -217,7 +217,7 @@ class _Tree:
 
         return indices
 
-class ManifoldForest(BaseEstimator):
+class ManifoldForestNaive(BaseEstimator):
     """ Manifold forests
 
     References
@@ -293,7 +293,7 @@ class ManifoldForest(BaseEstimator):
         self.fit_transform(X)
         return self
         
-class RandomTreesEmbedding(BaseForest):
+class ManifoldForest(BaseForest):
     def __init__(self,
                  n_estimators=10,
                  max_depth=5,
@@ -308,7 +308,7 @@ class RandomTreesEmbedding(BaseForest):
                  random_state=None,
                  verbose=0,
                  warm_start=False):
-        super(RandomTreesEmbedding, self).__init__(
+        super(ManifoldForest, self).__init__(
             base_estimator=ExtraTreeRegressor(),
             n_estimators=n_estimators,
             estimator_params=("splitter", "max_depth", "min_samples_split",
@@ -343,7 +343,7 @@ class RandomTreesEmbedding(BaseForest):
 
     def fit_transform(self, X, y=None, sample_weight=None):
         X = np.asarray(X)
-        super(RandomTreesEmbedding, self).fit(X, X,sample_weight=sample_weight)
+        super(ManifoldForest, self).fit(X, X,sample_weight=sample_weight)
 
         self.one_hot_encoder_ = OneHotEncoder(sparse=self.sparse_output)
         clusters = self.one_hot_encoder_.fit_transform(self.apply(X))

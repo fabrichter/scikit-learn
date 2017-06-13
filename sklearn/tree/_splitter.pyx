@@ -1653,6 +1653,7 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
     Splitter for finding the best split based on the differential
     (continuous) entropy of a d-dimensional Gaussian.
        """
+    cdef SIZE_t split
     def __reduce__(self):
         # TODO fix: BestSplitter?
         return (BestSplitter, (self.criterion,
@@ -1662,8 +1663,22 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                                self.random_state,
                                self.presort), self.__getstate__())
 
-    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
+    cdef double _proxy_impurity_improvement(self, double impurity_left, double impurity_right, SIZE_t split) nogil:
+        # TODO: weights
+        cdef double total = self.end - self.start
+        cdef double weighted_left = (split - self.start) / total
+        cdef double weighted_right = (self.end - split) / total
+        cdef  double improvement
+        # otherwise improvement = inf
+        improvement = 0
+        if split - self.start > 1:
+            improvement += weighted_left * impurity_left
+        if self.end - split > 1:
+            improvement += weighted_right * impurity_right
+        return -improvement
 
+
+    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
         #NOTE: Why you ask? We don't know.
         cdef np.npy_intp[2] dims = [self.n_features, self.n_samples]
         cdef np.ndarray data = np.PyArray_SimpleNewFromData(2, dims, np.NPY_FLOAT, X).T[start:end]
@@ -1671,6 +1686,7 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         cdef np.ndarray normalized = data - means
         cdef np.ndarray cov = np.dot(normalized.T, normalized)
         cdef double det = np.linalg.slogdet(cov)[1]
+        # print(f"Calculating entropy from {start} to {end} = {det}")
         return det
 
 
@@ -1832,33 +1848,22 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
 
                             # self.criterion.update(current.pos)
 
-                            # # Reject if min_weight_leaf is not satisfied
+                            # Reject if min_weight_leaf is not satisfied
                             # if ((self.criterion.weighted_n_left < min_weight_leaf) or
                             #         (self.criterion.weighted_n_right < min_weight_leaf)):
                             #     continue
 
                             # current_proxy_improvement = self.criterion.proxy_impurity_improvement()
-                            
-
-                            # TODO: calculate continous gaussian entropy without gil.
-                            # this means no numpy, slicing, etc.
 
                             with gil:
                                 # calculate continous entropy of gaussian
-                                current.improvement += self._entropy(X, start, current.pos) 
-                                current.improvement += self._entropy(X, current.pos, end) 
-                                # data = np.copy(Xf[current.pos:end])
-                                # means = np.mean(data, axis=0)
-                                # data = data - means
-                                # cov = np.dot(data.T, data)
-                                # det = np.linalg.det(cov)
-                                # if det == 0:
-                                #     return 0
-                                # entropy = np.log(np.abs(det))
-                                # current_improvement += entropy 
+                                current.improvement = self._proxy_impurity_improvement(
+                                    self._entropy(X, start, current.pos),
+                                    self._entropy(X, current.pos, end), current.pos)
 
                             if current.improvement > best.improvement:
                                 best = current  # copy
+
         # Reorganize into samples[start:best.pos] + samples[best.pos:end]
         if best.pos < end:
             feature_offset = X_feature_stride * best.feature
@@ -1899,18 +1904,56 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
 
         # Return values
         split[0] = best
+        self.split = best.pos
         n_constant_features[0] = n_total_constants
+        with gil:
+            print(f"Split at {self.split}")
         return 0
 
     cdef void node_value(self, double* dest) nogil:
         """Copy the value of node samples[start:end] into dest."""
+        # NOTE: Probably just counting samples for each possible target value
+        # cdef SIZE_t i
+        # with gil:
+        #     print(f"start {self.start}, split {self.split}, end {self.end}")
+        #     for i in range(self.start, self.split):
+        #         print(f"setting {i - self.start}")
+        #         dest[i - self.start] = 0
+        #     for i in range(self.split, self.end-2):
+        #         print(f"setting {i - self.start}")
+        #         dest[i - self.start] = 1
 
-        # TODO count label distribution, probably?
-        pass
+        dest[0] = self.split - self.start
+        dest[1] = self.end - self.split + 1
+        with gil:
+            print(f"Node value: 0 = {self.split - self.start}, 1 = {self.end - self.split + 1}")
 
     cdef double node_impurity(self) nogil:
         """Return the impurity of the current node."""
+        with gil:
+            print(f"Entropy of data from {self.start} to {self.end} = {self._entropy(self.X, self.start, self.end)}")
+        return self._entropy(self.X, self.start, self.end)
 
-        # TODO compute entropy
-        pass
 
+    cdef int node_reset(self, SIZE_t start, SIZE_t end,
+                        double* weighted_n_node_samples) nogil except -1:
+        """Reset splitter on node samples[start:end].
+
+        Returns -1 in case of failure to allocate memory (and raise MemoryError)
+        or 0 otherwise.
+
+        Parameters
+        ----------
+        start : SIZE_t
+            The index of the first sample to consider
+        end : SIZE_t
+            The index of the last sample to consider
+        weighted_n_node_samples : numpy.ndarray, dtype=double pointer
+            The total weight of those samples
+        """
+
+        self.start = start
+        self.end = end
+        weighted_n_node_samples[0] = self.criterion.weighted_n_node_samples
+        self.split = end
+        return 0
