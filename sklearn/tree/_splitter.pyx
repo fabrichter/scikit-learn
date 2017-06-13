@@ -1662,11 +1662,11 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                                self.random_state,
                                self.presort), self.__getstate__())
 
-    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end, long long size) with gil:
+    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
 
-        #NOTE: it doesn't take ownership of `data`. You must free `data` yourself
-        cdef np.npy_intp dims = size
-        cdef np.ndarray data = np.PyArray_SimpleNewFromData(1, &dims, np.NPY_DOUBLE, <void*>X)[start:end]
+        #NOTE: Why you ask? We don't know.
+        cdef np.npy_intp[2] dims = [self.n_features, self.n_samples]
+        cdef np.ndarray data = np.PyArray_SimpleNewFromData(2, dims, np.NPY_FLOAT, X).T[start:end]
         cdef np.ndarray means = np.mean(data, axis=0)
         cdef np.ndarray normalized = data - means
         cdef np.ndarray cov = np.dot(normalized.T, normalized)
@@ -1703,9 +1703,6 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         cdef SIZE_t* sample_mask = self.sample_mask
 
         cdef SplitRecord best, current
-        cdef double current_improvement = -INFINITY
-        cdef double best_improvement = -INFINITY
-
         cdef SIZE_t f_i = n_features
         cdef SIZE_t f_j
         cdef SIZE_t tmp
@@ -1848,8 +1845,8 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
 
                             with gil:
                                 # calculate continous entropy of gaussian
-                                current_improvement += self._entropy(Xf, start, current.pos, end - start) 
-                                current_improvement += self._entropy(Xf, current.pos, end,  end - start) 
+                                current.improvement += self._entropy(X, start, current.pos) 
+                                current.improvement += self._entropy(X, current.pos, end) 
                                 # data = np.copy(Xf[current.pos:end])
                                 # means = np.mean(data, axis=0)
                                 # data = data - means
@@ -1860,24 +1857,24 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                                 # entropy = np.log(np.abs(det))
                                 # current_improvement += entropy 
 
-                            # if current.improvement > best.improvement:
-                            #     best = current  # copy
-        # # Reorganize into samples[start:best.pos] + samples[best.pos:end]
-        # if best.pos < end:
-        #     feature_offset = X_feature_stride * best.feature
-        #     partition_end = end
-        #     p = start
+                            if current.improvement > best.improvement:
+                                best = current  # copy
+        # Reorganize into samples[start:best.pos] + samples[best.pos:end]
+        if best.pos < end:
+            feature_offset = X_feature_stride * best.feature
+            partition_end = end
+            p = start
 
-        #     while p < partition_end:
-        #         if X[X_sample_stride * samples[p] + feature_offset] <= best.threshold:
-        #             p += 1
+            while p < partition_end:
+                if X[X_sample_stride * samples[p] + feature_offset] <= best.threshold:
+                    p += 1
 
-        #         else:
-        #             partition_end -= 1
+                else:
+                    partition_end -= 1
 
-        #             tmp = samples[partition_end]
-        #             samples[partition_end] = samples[p]
-        #             samples[p] = tmp
+                    tmp = samples[partition_end]
+                    samples[partition_end] = samples[p]
+                    samples[p] = tmp
 
         #     self.criterion.reset()
         #     self.criterion.update(best.pos)
@@ -1904,3 +1901,16 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         split[0] = best
         n_constant_features[0] = n_total_constants
         return 0
+
+    cdef void node_value(self, double* dest) nogil:
+        """Copy the value of node samples[start:end] into dest."""
+
+        # TODO count label distribution, probably?
+        pass
+
+    cdef double node_impurity(self) nogil:
+        """Return the impurity of the current node."""
+
+        # TODO compute entropy
+        pass
+

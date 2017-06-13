@@ -11,6 +11,9 @@ from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
 from ._utils import _affinity_matrix
+from ..tree import ExtraTreeRegressor
+from ..ensemble.forest import BaseForest
+from ..preprocessing import OneHotEncoder
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
@@ -290,3 +293,71 @@ class ManifoldForest(BaseEstimator):
         self.fit_transform(X)
         return self
         
+class RandomTreesEmbedding(BaseForest):
+    def __init__(self,
+                 n_estimators=10,
+                 max_depth=5,
+                 min_samples_split=2,
+                 min_samples_leaf=1,
+                 min_weight_fraction_leaf=0.,
+                 max_leaf_nodes=None,
+                 min_impurity_decrease=0.,
+                 min_impurity_split=None,
+                 sparse_output=True,
+                 n_jobs=1,
+                 random_state=None,
+                 verbose=0,
+                 warm_start=False):
+        super(RandomTreesEmbedding, self).__init__(
+            base_estimator=ExtraTreeRegressor(),
+            n_estimators=n_estimators,
+            estimator_params=("splitter", "max_depth", "min_samples_split",
+                              "min_samples_leaf", "min_weight_fraction_leaf",
+                              "max_features", "max_leaf_nodes",
+                              "min_impurity_decrease", "min_impurity_split",
+                              "random_state"),
+            bootstrap=False,
+            oob_score=False,
+            n_jobs=n_jobs,
+            random_state=random_state,
+            verbose=verbose,
+            warm_start=warm_start)
+
+        self.splitter = 'gaussian'
+        self.max_depth = max_depth
+        self.min_samples_split = min_samples_split
+        self.min_samples_leaf = min_samples_leaf
+        self.min_weight_fraction_leaf = min_weight_fraction_leaf
+        self.max_features = 1
+        self.max_leaf_nodes = max_leaf_nodes
+        self.min_impurity_decrease = min_impurity_decrease
+        self.min_impurity_split = min_impurity_split
+        self.sparse_output = sparse_output
+
+    def _set_oob_score(self, X, y):
+        raise NotImplementedError("OOB score not supported by tree embedding")
+
+    def fit(self, X, y=None, sample_weight=None):
+        self.fit_transform(X, y, sample_weight=sample_weight)
+        return self
+
+    def fit_transform(self, X, y=None, sample_weight=None):
+        X = np.asarray(X)
+        super(RandomTreesEmbedding, self).fit(X, X,sample_weight=sample_weight)
+
+        self.one_hot_encoder_ = OneHotEncoder(sparse=self.sparse_output)
+        clusters = self.one_hot_encoder_.fit_transform(self.apply(X))
+        print(clusters)
+        return clusters
+        affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
+        for index, tree in enumerate(self.trees):
+            clusters = tree.predict(X)
+            affinities[index] = _affinity_matrix(clusters)
+
+        self.W = np.sum(affinities, axis=0) / self.num_trees
+        return self.W
+
+
+
+    def transform(self, X):
+        return self.one_hot_encoder_.transform(self.apply(X))
