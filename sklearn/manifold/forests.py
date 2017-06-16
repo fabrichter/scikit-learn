@@ -342,22 +342,15 @@ class ManifoldForest(BaseForest):
         return self
 
     def fit_transform(self, X, y=None, sample_weight=None):
-        X = np.asarray(X)
         super(ManifoldForest, self).fit(X, X,sample_weight=sample_weight)
 
-        self.one_hot_encoder_ = OneHotEncoder(sparse=self.sparse_output)
-        clusters = self.one_hot_encoder_.fit_transform(self.apply(X))
-        print(clusters)
-        return clusters
-        affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
-        for index, tree in enumerate(self.trees):
-            clusters = tree.predict(X)
-            affinities[index] = _affinity_matrix(clusters)
-
-        self.W = np.sum(affinities, axis=0) / self.num_trees
-        return self.W
-
-
+        return self.transform(X)
 
     def transform(self, X):
-        return self.one_hot_encoder_.transform(self.apply(X))
+        clusters = self.apply(X)
+        affinities = np.empty((self.n_estimators, X.shape[0], X.shape[0]))
+        for index in range(self.n_estimators):
+            affinities[index] = _affinity_matrix(clusters[:,index])
+
+        self.W = np.sum(affinities, axis=0) / self.n_estimators
+        return self.W
