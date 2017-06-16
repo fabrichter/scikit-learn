@@ -10,10 +10,11 @@ import math
 from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
-from ._utils import _affinity_matrix
+from ._utils import _affinity_matrix_gaussian, _affinity_matrix_binary
 from ..tree import ExtraTreeRegressor
 from ..ensemble.forest import BaseForest
 from ..preprocessing import OneHotEncoder
+from joblib import Parallel, delayed
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
@@ -269,14 +270,15 @@ class ManifoldForestNaive(BaseEstimator):
         X = np.asarray(X)
         random_state = check_random_state(random_state)
         def make_tree():
-            return _Tree(depth=self.depth, num_features=self.num_features, num_options=self.num_options)
+            return _Tree(depth=self.depth, num_features=self.num_features,
+                         num_options=self.num_options)
 
         self.trees = [make_tree() for i in range(self.num_trees)]
         affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
         for index, tree in enumerate(self.trees):
             tree.fit(X, random_state=random_state)
             clusters = tree.predict(X)
-            affinities[index] = _affinity_matrix(clusters)
+            affinities[index] = _affinity_matrix_binary(clusters, X)
 
         self.W = np.sum(affinities, axis=0) / self.num_trees
         return self.W
@@ -292,10 +294,21 @@ class ManifoldForestNaive(BaseEstimator):
         """
         self.fit_transform(X)
         return self
+
+def calculate_affinity(clusters, values, metric, epsilon):
+    """
+    Affinity calculation. External method for joblib.Parallel
+    """
+    if metric == 'gaussian':
+        return _affinity_matrix_gaussian(clusters, values, epsilon)
+    elif metric == 'binary':
+        return _affinity_matrix_binary(clusters)
         
 class ManifoldForest(BaseForest):
     def __init__(self,
                  n_estimators=10,
+                 affinity_metric='binary',
+                 affinity_epsilon=0.1,
                  max_depth=5,
                  min_samples_split=2,
                  min_samples_leaf=1,
@@ -324,6 +337,8 @@ class ManifoldForest(BaseForest):
             warm_start=warm_start)
 
         self.splitter = 'gaussian'
+        self.affinity_metric = affinity_metric
+        self.affinity_epsilon = affinity_epsilon
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.min_samples_leaf = min_samples_leaf
@@ -338,19 +353,18 @@ class ManifoldForest(BaseForest):
         raise NotImplementedError("OOB score not supported by tree embedding")
 
     def fit(self, X, y=None, sample_weight=None):
-        self.fit_transform(X, y, sample_weight=sample_weight)
+        super(ManifoldForest, self).fit(X, X, sample_weight=sample_weight)
         return self
-
-    def fit_transform(self, X, y=None, sample_weight=None):
-        super(ManifoldForest, self).fit(X, X,sample_weight=sample_weight)
-
-        return self.transform(X)
 
     def transform(self, X):
         clusters = self.apply(X)
-        affinities = np.empty((self.n_estimators, X.shape[0], X.shape[0]))
-        for index in range(self.n_estimators):
-            affinities[index] = _affinity_matrix(clusters[:,index])
-
+        arguments = [(clusters[:, i], X, self.affinity_metric, self.affinity_epsilon)
+                     for i in range(self.n_estimators)]
+        task = [delayed(calculate_affinity)(*arg) for arg in arguments]
+        affinities = np.asarray(Parallel(n_jobs=self.n_jobs)(task))
         self.W = np.sum(affinities, axis=0) / self.n_estimators
         return self.W
+
+    def fit_transform(self, X, y=None, sample_weight=None):
+        self.fit(X, y, sample_weight)
+        return self.transform(X)
