@@ -6,19 +6,15 @@ Manifold forests
 # License: BSD
 
 import numpy as np
-from scipy.sparse import issparse
 import math
 from ..base import BaseEstimator
-from ..utils import check_random_state, check_array
+from ..utils import check_random_state
 from ..utils.extmath import cartesian
-from . import _utils
+from ._utils import _affinity_matrix_gaussian, _affinity_matrix_binary
 from ..tree import ExtraTreeRegressor
-from ..ensemble.forest import BaseForest, DecisionTreeRegressor
+from ..ensemble.forest import BaseForest
 from ..preprocessing import OneHotEncoder
-
-
-from .forestsNaiveRek import AffinityForestNaiveRecursive
-
+from joblib import Parallel, delayed
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
@@ -33,7 +29,6 @@ def _entropy(data):
         return 0
     entropy = np.log(abs(det)) #due to numerical reasons might be slightly negative -> abs as workaround
     return entropy
-
 class _Split:
     """
     Members
@@ -45,7 +40,7 @@ class _Split:
     def __init__(self, features, num_options=10):
         """
         A node of a tree, marking a split
-        
+
         Parameters
         ----------
         features : array
@@ -60,7 +55,7 @@ class _Split:
     def fit(self, X, random_state=0):
         """
         Search and return for the weak learner that gives us the most information.
-        
+
         Parameters
         ----------
         X : array, shape (n_samples, n_features)
@@ -69,10 +64,10 @@ class _Split:
         random_state : RandomState or an int seed (0 by default)
             A random number generator instance to define the state of the
             random permutations generator.
-        
+
         Returns
         -------
-        
+
         split : array, shape (n_samples, )
             Boolean array that specifies the side of the split for each sample
         """
@@ -121,7 +116,7 @@ class _Split:
         feature_idx, value_idx = np.unravel_index(best, gain.shape)
         value = choices[feature_idx, value_idx]
         feature = self.features[feature_idx]
-        split = X[:, feature] < value 
+        split = X[:, feature] < value
         self.feature = feature
         self.value = value
         return split
@@ -129,15 +124,15 @@ class _Split:
     def predict(self, X):
         """
         Apply fitted weak learner to dataset
-        
+
         Parameters
         ----------
         X : array, shape (n_samples, n_features)
             Input data
-        
+
         Returns
         -------
-        
+
         result : array, shape (n_samples)
             boolean symbolizing left or right side of split of weak learner
         """
@@ -150,7 +145,7 @@ class _Tree:
     def __init__(self, depth, num_features, num_options):
         """
         A decision tree of a random forest.
-        
+
         Parameters
         ----------
         depth : int
@@ -168,7 +163,7 @@ class _Tree:
     def fit(self, X, random_state=0):
         """
         Build tree. Compute splits for the tree to cluster the data correspondingly.
-        
+
         Parameters
         ----------
         X : array (num_samples, num_features)
@@ -201,10 +196,10 @@ class _Tree:
         ----------
         data : array (num_samples, num_features)
             Input data.
-        
+
         Returns
         -------
-        
+
         indices : array, shape (num_samples,)
             Indices of leaf nodes of tree (i.e. associated cluster) for each sample
         """
@@ -223,22 +218,22 @@ class _Tree:
 
         return indices
 
-class AffinityForestNaive(BaseEstimator):
+class ManifoldForestNaive(BaseEstimator):
     """ Manifold forests
 
     References
     ----------s    "Decision Forests for Computer Vision and Medical Image Analysis, Advances in Computer Vision and Pattern Recognition" Criminisi, A.; Shotton, J.
-    
+
     Springer-Verlag London (2013)
 
     """
     def __init__(self, num_trees, depth, num_options, num_features):
         """
-        Initialize forest for estimating affinity matrix and projecting into 
-        
+        Initialize forest for estimating affinity matrix and projecting into
+
         Parameters
         ----------
-        
+
         num_trees : int
             Number of trees in forest
         depth : int
@@ -266,7 +261,7 @@ class AffinityForestNaive(BaseEstimator):
         random_state : RandomState or an int seed (0 by default)
             A random number generator instance to define the state of the
             random permutations generator.
-        
+
         Returns
         -------
         W : array, shape (n_samples, n_samples)
@@ -275,14 +270,15 @@ class AffinityForestNaive(BaseEstimator):
         X = np.asarray(X)
         random_state = check_random_state(random_state)
         def make_tree():
-            return _Tree(depth=self.depth, num_features=self.num_features, num_options=self.num_options)
+            return _Tree(depth=self.depth, num_features=self.num_features,
+                         num_options=self.num_options)
 
         self.trees = [make_tree() for i in range(self.num_trees)]
         affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
         for index, tree in enumerate(self.trees):
             tree.fit(X, random_state=random_state)
             clusters = tree.predict(X)
-            affinities[index] = _utils._affinity_matrix(clusters)
+            affinities[index] = _affinity_matrix_binary(clusters, X)
 
         self.W = np.sum(affinities, axis=0) / self.num_trees
         return self.W
@@ -299,81 +295,20 @@ class AffinityForestNaive(BaseEstimator):
         self.fit_transform(X)
         return self
 
+def calculate_affinity(clusters, values, metric, epsilon):
+    """
+    Affinity calculation. External method for joblib.Parallel
+    """
+    if metric == 'gaussian':
+        return _affinity_matrix_gaussian(clusters, values, epsilon)
+    elif metric == 'binary':
+        return _affinity_matrix_binary(clusters)
 
-
-        
-# class ManifoldForest(BaseForest):
-#     def __init__(self,
-#                  n_estimators=10,
-#                  max_depth=5,
-#                  min_samples_split=2,
-#                  min_samples_leaf=1,
-#                  min_weight_fraction_leaf=0.,
-#                  max_leaf_nodes=None,
-#                  min_impurity_decrease=0.,
-#                  min_impurity_split=None,
-#                  sparse_output=True,
-#                  n_jobs=1,
-#                  random_state=None,
-#                  verbose=0,
-#                  warm_start=False):
-#         super(ManifoldForest, self).__init__(
-#             base_estimator=ExtraTreeRegressor(),
-#             n_estimators=n_estimators,
-#             estimator_params=("splitter", "max_depth", "min_samples_split",
-#                               "min_samples_leaf", "min_weight_fraction_leaf",
-#                               "max_features", "max_leaf_nodes",
-#                               "min_impurity_decrease", "min_impurity_split",
-#                               "random_state"),
-#             bootstrap=False,
-#             oob_score=False,
-#             n_jobs=n_jobs,
-#             random_state=random_state,
-#             verbose=verbose,
-#             warm_start=warm_start)
-#
-#         self.splitter = 'gaussian'
-#         self.max_depth = max_depth
-#         self.min_samples_split = min_samples_split
-#         self.min_samples_leaf = min_samples_leaf
-#         self.min_weight_fraction_leaf = min_weight_fraction_leaf
-#         self.max_features = 1
-#         self.max_leaf_nodes = max_leaf_nodes
-#         self.min_impurity_decrease = min_impurity_decrease
-#         self.min_impurity_split = min_impurity_split
-#         self.sparse_output = sparse_output
-#
-#     def _set_oob_score(self, X, y):
-#         raise NotImplementedError("OOB score not supported by tree embedding")
-#
-#     def fit(self, X, y=None, sample_weight=None):
-#         self.fit_transform(X, y, sample_weight=sample_weight)
-#         return self
-#
-#     def fit_transform(self, X, y=None, sample_weight=None):
-#         X = np.asarray(X)
-#         super(ManifoldForest, self).fit(X, X,sample_weight=sample_weight)
-#
-#         self.one_hot_encoder_ = OneHotEncoder(sparse=self.sparse_output)
-#         clusters = self.one_hot_encoder_.fit_transform(self.apply(X))
-#         print(clusters)
-#         return clusters
-#         affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
-#         for index, tree in enumerate(self.trees):
-#             clusters = tree.predict(X)
-#             affinities[index] = _affinity_matrix(clusters)
-#
-#         self.W = np.sum(affinities, axis=0) / self.num_trees
-#         return self.W
-#
-#     def transform(self, X):
-#         return self.one_hot_encoder_.transform(self.apply(X))
-
-
-class AffinityForestSKlearnXX(BaseForest):
-
+class ManifoldForest(BaseForest):
     def __init__(self,
                  n_estimators=10,
+                 affinity_metric='binary',
+                 affinity_epsilon=0.1,
                  max_depth=5,
                  min_samples_split=2,
                  min_samples_leaf=1,
@@ -386,10 +321,10 @@ class AffinityForestSKlearnXX(BaseForest):
                  random_state=None,
                  verbose=0,
                  warm_start=False):
-        super(AffinityForestSKlearnXX, self).__init__(
-            base_estimator=DecisionTreeRegressor(),
+        super(ManifoldForest, self).__init__(
+            base_estimator=ExtraTreeRegressor(),
             n_estimators=n_estimators,
-            estimator_params=("criterion", "max_depth", "min_samples_split",
+            estimator_params=("splitter", "max_depth", "min_samples_split",
                               "min_samples_leaf", "min_weight_fraction_leaf",
                               "max_features", "max_leaf_nodes",
                               "min_impurity_decrease", "min_impurity_split",
@@ -401,7 +336,9 @@ class AffinityForestSKlearnXX(BaseForest):
             verbose=verbose,
             warm_start=warm_start)
 
-        self.criterion = 'mse'
+        self.splitter = 'gaussian'
+        self.affinity_metric = affinity_metric
+        self.affinity_epsilon = affinity_epsilon
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.min_samples_leaf = min_samples_leaf
@@ -416,67 +353,18 @@ class AffinityForestSKlearnXX(BaseForest):
         raise NotImplementedError("OOB score not supported by tree embedding")
 
     def fit(self, X, y=None, sample_weight=None):
-        """Fit estimator.
-        Parameters
-        ----------
-        X : array-like or sparse matrix, shape=(n_samples, n_features)
-            The input samples. Use ``dtype=np.float32`` for maximum
-            efficiency. Sparse matrices are also supported, use sparse
-            ``csc_matrix`` for maximum efficiency.
-        Returns
-        -------
-        self : object
-            Returns self.
-        """
-        self.fit_transform(X, X, sample_weight=sample_weight)
+        super(ManifoldForest, self).fit(X, X, sample_weight=sample_weight)
         return self
 
-    def fit_transform(self, X, y=None, sample_weight=None):
-        """Fit estimator and transform dataset.
-        Parameters
-        ----------
-        X : array-like or sparse matrix, shape=(n_samples, n_features)
-            Input data used to build forests. Use ``dtype=np.float32`` for
-            maximum efficiency.
-        Returns
-        -------
-        X_transformed : array, shape=(n_samples, n_trees)
-            indices of the clusters it belongs to, for each tree
-        """
-        X = check_array(X, accept_sparse=['csc'])
-        if issparse(X):
-            # Pre-sort indices to avoid that each individual tree of the
-            # ensemble sorts the indices.
-            X.sort_indices()
-
-        rnd = check_random_state(self.random_state)
-        super(AffinityForestSKlearnXX, self).fit(X, X,
-                                                sample_weight=sample_weight)
-
-        clusterIndices = self.apply(X) # [n_samples, n_trees]
-        affinities = np.empty((self.n_estimators, X.shape[0], X.shape[0]))
-
-        for index in range(self.n_estimators):
-            affinities[index] = _utils._affinity_matrix(clusterIndices[:, index])
-
+    def transform(self, X):
+        clusters = self.apply(X)
+        arguments = [(clusters[:, i], X, self.affinity_metric, self.affinity_epsilon)
+                     for i in range(self.n_estimators)]
+        task = [delayed(calculate_affinity)(*arg) for arg in arguments]
+        affinities = np.asarray(Parallel(n_jobs=self.n_jobs)(task))
         self.W = np.sum(affinities, axis=0) / self.n_estimators
         return self.W
 
-    def transform(self, X):
-        """Transform dataset.
-        Parameters
-        ----------
-        X : array-like or sparse matrix, shape=(n_samples, n_features)
-            Input data to be transformed. Use ``dtype=np.float32`` for maximum
-            efficiency. Sparse matrices are also supported, use sparse
-            ``csr_matrix`` for maximum efficiency.
-        Returns
-        -------
-        X_transformed : array, shape=(n_samples, n_trees)
-            indices of the clusters it belongs to, for each tree
-        """
-        raise NotImplementedError("blocked for safety")
-        return self.apply(X)
-
-
-# __all__=['AffinityForestNaiveRecursive', 'AffinityForestNaive', 'AffinityForestSKlearnXX']
+    def fit_transform(self, X, y=None, sample_weight=None):
+        self.fit(X, y, sample_weight)
+        return self.transform(X)

@@ -139,16 +139,50 @@ cpdef np.ndarray[np.float32_t, ndim=2] _binary_search_perplexity(
     return P
 
 @cython.boundscheck(False)
-cpdef np.ndarray[np.int8_t, ndim=2] _affinity_matrix(np.ndarray X):
+cpdef np.ndarray[np.int8_t, ndim=2] _affinity_matrix_binary(np.ndarray L):
     """
-    Computes affinity matrix out of tree partition
-    using binary affinity
+    Computes affinity matrix out of tree partition using binary affinity
+
+    Parameters
+    ----------
+    L : np.ndarray, shape (n_samples,)
+        Labels as computed by clustering tree
     """
-    cdef unsigned int n = X.shape[0]
-    cdef np.ndarray[np.int8_t, ndim=2] distances = np.empty((n, n), dtype=np.int8)
+    cdef unsigned int n_samples = L.shape[0]
+    cdef np.ndarray[np.int8_t, ndim=2] distances = np.zeros((n_samples, n_samples), dtype=np.int8)
+
+    for i in range(n_samples):
+        distances[i, :] = L[i] - L == 0
+    
+    return distances
+
+
+@cython.boundscheck(False)
+cpdef np.ndarray[np.double_t, ndim=2] _affinity_matrix_gaussian(np.ndarray L, np.ndarray X, double epsilon):
+    """
+    Computes affinity matrix out of tree partition using gaussian affinity
+
+    Parameters
+    ----------
+    L : np.ndarray, shape (n_samples,)
+        Labels as computed by clustering tree
+    X : np.ndarray, shape (n_samples, n_features)
+        Datapoints
+    epsilon : double
+        Parameter for gaussian affinity
+    """
+
+    cdef unsigned int n_samples = X.shape[0]
+    cdef unsigned int n_features = X.shape[1]
+    cdef np.ndarray[np.double_t, ndim=2] distances = np.zeros((n_samples, n_samples), dtype=np.double)
+    cdef np.ndarray[np.int8_t, ndim=1] same_leaf = np.empty((n_samples,), dtype=np.int8)
+    cdef np.ndarray[np.double_t, ndim=1] elem_distance
     cdef unsigned int i
 
-    for i in range(n):
-        distances[i, :] = X[i] - X == 0
-
+    for i in range(n_samples):
+        same_leaf[:] = L[i] - L == 0
+        for j in range(n_samples):
+            if same_leaf[j]:
+                elem_distance = X[i] - X[j]
+                distances[i,j] = np.exp(-np.dot(elem_distance.T, elem_distance) / epsilon ** 2)
     return distances

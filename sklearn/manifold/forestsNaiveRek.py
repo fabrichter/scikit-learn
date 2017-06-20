@@ -2,7 +2,7 @@ import numpy as np
 import math
 from ..base import BaseEstimator
 from ..utils import check_random_state
-from ._utils import _affinity_matrix
+from ._utils import _affinity_matrix_binary
 from ..utils.extmath import cartesian
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
@@ -139,8 +139,7 @@ class _Split:
             entropy_before = _entropy(X)
             entropy_left = [_entropy(split) for split in split_l]
             entropy_right = [_entropy(split) for split in split_r]
-            gain[index] = entropy_before - (
-            np.divide(size_left, total) * entropy_left + np.divide(size_right, total) * entropy_right)
+            gain[index] = entropy_before - (np.divide(size_left, total) * entropy_left + np.divide(size_right, total) * entropy_right)
 
         # find best split & feature, return split
         best = np.argmax(gain)
@@ -165,7 +164,7 @@ class _Split:
             boolean symbolizing left or right side of split of weak learner
         """
         X = np.asarray(X)
-        return X[:, self.feature] < self.value
+        return X[:, self.feature] >= self.value
 
 
 # NOTE: bagging not implemented, as in reference
@@ -285,10 +284,18 @@ class AffinityForestNaiveRecursive(BaseEstimator):
         for index, tree in enumerate(self.trees):
             tree.fit(X, random_state=random_state)
             clusters = tree.predict(X)
-            affinities[index] = _affinity_matrix(clusters)
+            affinities[index] = _affinity_matrix_binary(clusters)
 
         self.W = np.sum(affinities, axis=0) / self.num_trees
         return self.W
+
+    def apply(self, X):
+        results = np.zeros((X.shape[0], self.num_trees))
+
+        for i, tr in enumerate(self.trees):
+            results[:, i] = tr.predict(X)
+
+        return results
 
     def fit(self, X, y=None):
         """

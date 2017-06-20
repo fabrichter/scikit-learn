@@ -1686,7 +1686,6 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         cdef np.ndarray normalized = data - means
         cdef np.ndarray cov = np.dot(normalized.T, normalized)
         cdef double det = np.linalg.slogdet(cov)[1]
-        # print(f"Calculating entropy from {start} to {end} = {det}")
         return det
 
 
@@ -1903,35 +1902,24 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                sizeof(SIZE_t) * n_found_constants)
 
         # Return values
+        # TODO use cached values
+        best.improvement = self._entropy(X, self.start, self.end) + best.improvement
+        best.impurity_left = self._entropy(X, self.start, best.pos)
+        best.impurity_right = self._entropy(X, best.pos, self.end)
         split[0] = best
         self.split = best.pos
         n_constant_features[0] = n_total_constants
-        with gil:
-            print(f"Split at {self.split}")
         return 0
 
     cdef void node_value(self, double* dest) nogil:
         """Copy the value of node samples[start:end] into dest."""
-        # NOTE: Probably just counting samples for each possible target value
-        # cdef SIZE_t i
-        # with gil:
-        #     print(f"start {self.start}, split {self.split}, end {self.end}")
-        #     for i in range(self.start, self.split):
-        #         print(f"setting {i - self.start}")
-        #         dest[i - self.start] = 0
-        #     for i in range(self.split, self.end-2):
-        #         print(f"setting {i - self.start}")
-        #         dest[i - self.start] = 1
-
+        # NOTE: Probably just counting samples for each possible target value       
         dest[0] = self.split - self.start
         dest[1] = self.end - self.split + 1
-        with gil:
-            print(f"Node value: 0 = {self.split - self.start}, 1 = {self.end - self.split + 1}")
+        
 
     cdef double node_impurity(self) nogil:
-        """Return the impurity of the current node."""
-        with gil:
-            print(f"Entropy of data from {self.start} to {self.end} = {self._entropy(self.X, self.start, self.end)}")
+        """Return the impurity of the current node."""        
         return self._entropy(self.X, self.start, self.end)
 
 
