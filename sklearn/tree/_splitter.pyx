@@ -1676,6 +1676,14 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         if self.end - split > 1:
             improvement += weighted_right * impurity_right
         return -improvement
+    
+    cdef double _impurity_improvement(self, double impurity, double impurity_left, double impurity_right) nogil:
+        # As in criterion.impurity_improvement
+        return ((self.criterion.weighted_n_node_samples / self.weighted_n_samples) *
+                (impurity - (self.weighted_n_right / 
+                             self.weighted_n_node_samples * impurity_right)
+                          - (self.weighted_n_left / 
+                             self.weighted_n_node_samples * impurity_left)))
 
 
     cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
@@ -1845,12 +1853,12 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                                     ((end - current.pos) < min_samples_leaf)):
                                 continue
 
-                            # self.criterion.update(current.pos)
+                            self.criterion.update(current.pos)
 
                             # Reject if min_weight_leaf is not satisfied
-                            # if ((self.criterion.weighted_n_left < min_weight_leaf) or
-                            #         (self.criterion.weighted_n_right < min_weight_leaf)):
-                            #     continue
+                            if ((self.criterion.weighted_n_left < min_weight_leaf) or
+                                    (self.criterion.weighted_n_right < min_weight_leaf)):
+                                continue
 
                             # current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
@@ -1880,8 +1888,8 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                     samples[partition_end] = samples[p]
                     samples[p] = tmp
 
-        #     self.criterion.reset()
-        #     self.criterion.update(best.pos)
+            self.criterion.reset()
+            self.criterion.update(best.pos)
         #     best.improvement = self.criterion.impurity_improvement(impurity)
         #     self.criterion.children_impurity(&best.impurity_left,
         #                                      &best.impurity_right)
@@ -1902,46 +1910,20 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
                sizeof(SIZE_t) * n_found_constants)
 
         # Return values
-        # TODO use cached values
-        best.improvement = self._entropy(X, self.start, self.end) + best.improvement
         best.impurity_left = self._entropy(X, self.start, best.pos)
         best.impurity_right = self._entropy(X, best.pos, self.end)
+        best.improvement = self.impurity_improvement(self.node_impurity(), best.impurity_left, best.impurity_right)
         split[0] = best
-        self.split = best.pos
         n_constant_features[0] = n_total_constants
         return 0
 
     cdef void node_value(self, double* dest) nogil:
         """Copy the value of node samples[start:end] into dest."""
         # NOTE: Probably just counting samples for each possible target value       
-        dest[0] = self.split - self.start
-        dest[1] = self.end - self.split + 1
+        dest[0] = self.criterion.weighted_n_left / self.criterion.weighted_n_node_samples
+        dest[1] = self.criterion.weighted_n_right / self.criterion.weighted_n_node_samples
         
 
     cdef double node_impurity(self) nogil:
         """Return the impurity of the current node."""        
         return self._entropy(self.X, self.start, self.end)
-
-
-    cdef int node_reset(self, SIZE_t start, SIZE_t end,
-                        double* weighted_n_node_samples) nogil except -1:
-        """Reset splitter on node samples[start:end].
-
-        Returns -1 in case of failure to allocate memory (and raise MemoryError)
-        or 0 otherwise.
-
-        Parameters
-        ----------
-        start : SIZE_t
-            The index of the first sample to consider
-        end : SIZE_t
-            The index of the last sample to consider
-        weighted_n_node_samples : numpy.ndarray, dtype=double pointer
-            The total weight of those samples
-        """
-
-        self.start = start
-        self.end = end
-        weighted_n_node_samples[0] = self.criterion.weighted_n_node_samples
-        self.split = end
-        return 0
