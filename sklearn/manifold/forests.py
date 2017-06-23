@@ -11,7 +11,7 @@ from ..base import BaseEstimator
 from ..utils import check_random_state
 from ..utils.extmath import cartesian
 from ._utils import _affinity_matrix_gaussian, _affinity_matrix_binary
-from ..tree import ExtraTreeRegressor
+from ..tree import DecisionTreeRegressor
 from ..ensemble.forest import BaseForest
 from ..preprocessing import OneHotEncoder
 from joblib import Parallel, delayed
@@ -309,9 +309,10 @@ class ManifoldForest(BaseForest):
                  n_estimators=10,
                  affinity_metric='binary',
                  affinity_epsilon=0.1,
+                 max_features='auto',
                  max_depth=5,
                  min_samples_split=2,
-                 min_samples_leaf=1,
+                 min_samples_leaf=2,
                  min_weight_fraction_leaf=0.,
                  max_leaf_nodes=None,
                  min_impurity_decrease=0.,
@@ -322,7 +323,7 @@ class ManifoldForest(BaseForest):
                  verbose=0,
                  warm_start=False):
         super(ManifoldForest, self).__init__(
-            base_estimator=ExtraTreeRegressor(),
+            base_estimator=DecisionTreeRegressor(),
             n_estimators=n_estimators,
             estimator_params=("splitter", "max_depth", "min_samples_split",
                               "min_samples_leaf", "min_weight_fraction_leaf",
@@ -340,10 +341,10 @@ class ManifoldForest(BaseForest):
         self.affinity_metric = affinity_metric
         self.affinity_epsilon = affinity_epsilon
         self.max_depth = max_depth
+        self.max_features = max_features
         self.min_samples_split = min_samples_split
         self.min_samples_leaf = min_samples_leaf
         self.min_weight_fraction_leaf = min_weight_fraction_leaf
-        self.max_features = 1
         self.max_leaf_nodes = max_leaf_nodes
         self.min_impurity_decrease = min_impurity_decrease
         self.min_impurity_split = min_impurity_split
