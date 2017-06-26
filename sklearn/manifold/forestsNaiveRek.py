@@ -2,10 +2,10 @@ import numpy as np
 import math
 from ..base import BaseEstimator
 from ..utils import check_random_state
-from ._utils import _affinity_matrix_binary
+from ._utils import _affinity_matrix_binary, _affinity_matrix_gaussian
 from ..utils.extmath import cartesian
 
-# TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
+# # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
 def _entropy(data):
     """
     continous entropy of multivariate gaussian, simplified for use in information gain
@@ -236,7 +236,7 @@ class AffinityForestNaiveRecursive(BaseEstimator):
     Springer-Verlag London (2013)
     """
 
-    def __init__(self, num_trees, depth, num_options, num_features):
+    def __init__(self, num_trees, depth, num_options, num_features, affinityEpsilon=None):
         """
         Initialize forest for estimating affinity matrix and projecting into
 
@@ -256,6 +256,7 @@ class AffinityForestNaiveRecursive(BaseEstimator):
         self.depth = depth
         self.num_options = num_options
         self.num_features = num_features
+        self.affinityEpsilon = affinityEpsilon
 
     def fit_transform(self, X, dim=None, y=None, random_state=0):
         """
@@ -279,12 +280,17 @@ class AffinityForestNaiveRecursive(BaseEstimator):
         def make_tree():
             return _Tree(depth=self.depth, num_features=self.num_features, num_options=self.num_options)
 
+
+
         self.trees = [make_tree() for i in range(self.num_trees)]
         affinities = np.empty((self.num_trees, X.shape[0], X.shape[0]))
         for index, tree in enumerate(self.trees):
             tree.fit(X, random_state=random_state)
             clusters = tree.predict(X)
-            affinities[index] = _affinity_matrix_binary(clusters)
+            if self.affinityEpsilon:
+                affinities[index] = _affinity_matrix_gaussian(clusters, X, self.affinityEpsilon)
+            else:
+                affinities[index] = _affinity_matrix_binary(clusters)
 
         self.W = np.sum(affinities, axis=0) / self.num_trees
         return self.W
