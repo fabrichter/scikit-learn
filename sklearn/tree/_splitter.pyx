@@ -1688,15 +1688,36 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         return improvement
 
 
+    cdef double _transpose(data) nogil:
+        cdef double transposed = [[row[i] for row in data] for i in range(len(data[0]))]
+        return transposed
+
+    cdef double _getMatrixMinor(matrix,i,j):
+        return [row[:j] + row[j+1:] for row in (matrix[:i]+matrix[i+1:])]
+
+    cdef double _getMatrixDeterminant(matrix):
+        if len(matrix) == 2:
+            return matrix[0][0]*matrix[1][1]-matrix[0][1]*matrix[1][0]
+
+        determinant = 0
+        for c in range(len(matrix)):
+            determinant += ((-1)**c) * matrix[0][c] * _getMatrixDeterminant(_getMatrixMinor(matrix,0,c))
+        return determinant
+
     cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
         #NOTE: Why you ask? We don't know.
         cdef np.npy_intp[2] dims = [self.n_features, self.n_samples]
         cdef np.ndarray data = np.PyArray_SimpleNewFromData(2, dims, np.NPY_FLOAT, X).T[start:end]
-        cdef np.ndarray means = np.mean(data, axis=0)
-        cdef np.ndarray normalized = data - means
-        cdef np.ndarray cov = np.dot(normalized.T, normalized)
+        cdef double means = sum(data) / len(data)
+        #cdef np.ndarray means = np.mean(data, axis=0)
+        cdef double normalized = data - means
+        #cdef np.ndarray normalized = data - means
+        cdef double cov = sum(x*y for x,y in zip(_transpose(normalized), normalized))
+        #cdef np.ndarray cov = np.dot(normalized.T, normalized)
+        cdef double det = log(abs(_getMatrixDeterminant(cov)))
         cdef double det = np.linalg.slogdet(cov)[1]
         return det
+
 
     cdef void node_value(self, double* dest) nogil:
         """Copy the value of node samples[start:end] into dest."""
