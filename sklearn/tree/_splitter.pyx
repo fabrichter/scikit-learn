@@ -1715,7 +1715,7 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         cdef double cov = sum(x*y for x,y in zip(_transpose(normalized), normalized))
         #cdef np.ndarray cov = np.dot(normalized.T, normalized)
         cdef double det = log(abs(_getMatrixDeterminant(cov)))
-        cdef double det = np.linalg.slogdet(cov)[1]
+        #cdef double det = np.linalg.slogdet(cov)[1]
         return det
 
 
