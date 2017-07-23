@@ -17,10 +17,11 @@ from ..preprocessing import OneHotEncoder
 from joblib import Parallel, delayed
 
 # TODO: See whether using existing methods/classes for density estimation / tree-based methods would be helpful
-def _entropy(data):
+def _entropy(data): 
     """
     continous entropy of multivariate gaussian, simplified for use in information gain
     """
+    print("\n \n \n")
     means = np.mean(data, axis=0)
     normalized = data - means
     cov = np.dot(normalized.T, normalized)
@@ -38,6 +39,7 @@ class _Split:
     """
 
     def __init__(self, features, num_options=10):
+        print('yeah \n \n \n')
         """
         A node of a tree, marking a split
 
@@ -159,8 +161,10 @@ class _Tree:
         self.num_features = num_features
         self.num_options = num_options
         self.splits = [] # binary tree of splits
+        print('_Tree.__init__')
 
     def fit(self, X, random_state=0):
+        print('_Tree.fit')
         """
         Build tree. Compute splits for the tree to cluster the data correspondingly.
 
@@ -189,6 +193,7 @@ class _Tree:
             split_data.append(parent_data[split]) # right child (split result positive)
 
     def predict(self, X):
+        print('_Tree.predict')
         """
         Sort data into clusters according to fitted tree.
 
