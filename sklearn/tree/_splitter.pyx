@@ -1688,34 +1688,104 @@ cdef class GaussianEntropySplitter(BaseDenseSplitter):
         return improvement
 
 
-    cdef double _transpose(data) nogil:
-        cdef double transposed = [[row[i] for row in data] for i in range(len(data[0]))]
+    cdef double _transpose(self, double** data, unsigned int rows, unsigned int columns) nogil:
+
+
+        cdef SIZE_t j
+        cdef SIZE_t i
+        #cdef const double ro = <double> rows
+        #cdef const double co = <double> columns
+        cdef vector<double*> transposed
+        for i in range(len(data[0])):
+            for j in range(len(data)):
+                if j == 0 and i == 0:
+
+                    transposed = [[data[j][i]]]
+                elif j == 0:
+                    transposed += [[data[j][i]]]
+                else:
+                    transposed[i] += [data[j][i]]
         return transposed
 
-    cdef double _getMatrixMinor(matrix,i,j):
+
+    cdef double _getMatrixMinor(self, double** matrix, unsigned int rows, unsigned int columns, int i, int j) nogil:
+        cdef double* row
         return [row[:j] + row[j+1:] for row in (matrix[:i]+matrix[i+1:])]
 
-    cdef double _getMatrixDeterminant(matrix):
-        if len(matrix) == 2:
+
+    cdef double _getMatrixDeterminant(self, double** matrix, unsigned int rows, unsigned int columns) nogil:
+        if len(rows) == 2:
             return matrix[0][0]*matrix[1][1]-matrix[0][1]*matrix[1][0]
 
-        determinant = 0
-        for c in range(len(matrix)):
-            determinant += ((-1)**c) * matrix[0][c] * _getMatrixDeterminant(_getMatrixMinor(matrix,0,c))
+        cdef double determinant = 0.0
+        cdef SIZE_t c
+        for c in range(rows):
+
+            determinant += ((-1) ** c ) * matrix[0][c] * _getMatrixDeterminant(_getMatrixMinor(matrix, rows, columns, 0,c), )
         return determinant
 
-    cdef double _entropy(self, DTYPE_t* X, SIZE_t start, SIZE_t end) with gil:
+
+    cdef double _multiplyVectors(self, double vector1, double vector2) nogil:
+        cdef SIZE_t i
+        for i in range(len(vector1)):
+            if i == 0:
+                multi = [vector1[i]*vector2[i]]
+            else:
+                multi += [vector1[i]*vector2[i]]
+        return(multi)
+
+
+    cdef double _getColumn(self, double matrix, double colnumber) nogil:
+        cdef SIZE_t i
+        cdef double column[len(matrix[0])]
+        for i in range(len(matrix)):
+            if i == 0:
+                column = [matrix[i][colnumber]]
+            else:
+                column += [matrix[i][colnumber]]
+        return column
+
+
+    cdef double _dotProduct(self, double matrix1, double matrix2) nogil:
+        cdef int newentry
+        cdef SIZE_t i
+        cdef SIZE_t j
+        cdef double resultmatrix[len(matrix1)][len(matrix2[0])]
+        for i in range(len(matrix1)):
+            for j in range(len(matrix2)):
+                newentry = sum(_multiplyVectors(_getColumn(matrix2,j),matrix1[i]))
+                if j == 0 and i == 0:
+                    resultmatrix = [[newentry]]
+                elif j == 0:
+                    resultmatrix += [[newentry]]
+                else:
+                    resultmatrix[i] += [newentry]
+        return(resultmatrix)
+
+
+    cdef double _entropy(self, DTYPE_t X, SIZE_t start, SIZE_t end) nogil:
         #NOTE: Why you ask? We don't know.
-        cdef np.npy_intp[2] dims = [self.n_features, self.n_samples]
-        cdef np.ndarray data = np.PyArray_SimpleNewFromData(2, dims, np.NPY_FLOAT, X).T[start:end]
+        #cdef np.npy_intp[2] dims = [self.n_features, self.n_samples]
+        cdef double data[len(X)][len(X[0])]
+        data = X
+        #cdef np.ndarray data = np.PyArray_SimpleNewFromData(2, dims, np.NPY_FLOAT, X).T[start:end]
         cdef double means = sum(data) / len(data)
         #cdef np.ndarray means = np.mean(data, axis=0)
-        cdef double normalized = data - means
+        cdef double normalized[len(data)][len(data[0])]
+        normalized = data - means
         #cdef np.ndarray normalized = data - means
-        cdef double cov = sum(x*y for x,y in zip(_transpose(normalized), normalized))
+        cdef double cov[len(normalized)][len(normalized[0])]
+        #cov = _dotProduct(_transpose(normalized),normalized)
+        #cdef double* cov = sum(x*y for x,y in zip(_transpose(normalized), normalized))
         #cdef np.ndarray cov = np.dot(normalized.T, normalized)
-        cdef double det = log(abs(_getMatrixDeterminant(cov)))
-        #cdef double det = np.linalg.slogdet(cov)[1]
+        cdef double puredet
+        puredet = _getMatrixDeterminant(cov)
+        cdef double absdet
+        if puredet < 0:
+            absdet = -(puredet)
+        else:
+            absedet = puredet
+        cdef double det = log(absdet)
         return det
 
 
